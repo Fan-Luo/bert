@@ -207,12 +207,31 @@ def model_fn_builder(bert_config, init_checkpoint, layer_indexes, use_tpu,
   return model_fn
 
 
-def convert_examples_to_features(examples, seq_length, tokenizer):
+def convert_examples_to_features(examples, seq_length, tokenizer, predicate_positions):
   """Loads a data file into a list of `InputBatch`s."""
 
   features = []
+  mapped_predicates = []
   for (ex_index, example) in enumerate(examples):
-    tokens_a = tokenizer.tokenize(example.text_a)
+
+    orig_tokens = example.text_a
+    predicate_position = predicate_positions[ex_index] - 1   
+    ### Output
+    tokens_a = []
+
+    #tokens_a = tokenizer.tokenize(example.text_a)
+
+    # Token map will be an int -> int mapping between the `orig_tokens` index and
+    # the `tokens_a` index.
+    orig_to_tok_map = []
+    tokens_a.append("[CLS]")
+    for orig_token in orig_tokens:
+      orig_to_tok_map.append(len(tokens_a))
+      tokens_a.extend(tokenizer.tokenize(orig_token))
+    tokens_a.append("[SEP]")
+
+    mapped_predicate_position = orig_to_tok_map[predicate_position]
+    mapped_predicates.append(mapped_predicate_position)
 
     tokens_b = None
     if example.text_b:
@@ -248,13 +267,9 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
     # the entire model is fine-tuned.
     tokens = []
     input_type_ids = []
-    tokens.append("[CLS]")
-    input_type_ids.append(0)
     for token in tokens_a:
       tokens.append(token)
       input_type_ids.append(0)
-    tokens.append("[SEP]")
-    input_type_ids.append(0)
 
     if tokens_b:
       for token in tokens_b:
@@ -296,7 +311,7 @@ def convert_examples_to_features(examples, seq_length, tokenizer):
             input_ids=input_ids,
             input_mask=input_mask,
             input_type_ids=input_type_ids))
-  return features
+  return features, mapped_predicates
 
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
@@ -320,24 +335,30 @@ def read_examples(input_file):
   """Read a list of `InputExample`s from an input file."""
   examples = []
   unique_id = 0
-  with tf.gfile.GFile(input_file, "r") as reader:
-    while True:
-      line = tokenization.convert_to_unicode(reader.readline())
-      if not line:
-        break
-      line = line.strip()
-      text_a = None
-      text_b = None
-      m = re.match(r"^(.*) \|\|\| (.*)$", line)
-      if m is None:
-        text_a = line
-      else:
-        text_a = m.group(1)
-        text_b = m.group(2)
-      examples.append(
-          InputExample(unique_id=unique_id, text_a=text_a, text_b=text_b))
-      unique_id += 1
-  return examples
+
+  if('train' in input_file):
+    sentence_file = 'en-ud-train.conllu'
+  elif('dev' in input_file):
+    sentence_file = 'en-ud-dev.conllu'
+  elif('test' in input_file):
+    sentence_file = 'en-ud-test.conllu'
+
+  with open(sentence_file, 'r') as f:
+    predicates = []
+    with tf.gfile.GFile(input_file, "r") as reader:
+      while True:
+        data = f.read()
+        sentences = data.split('\n\n')
+        sentence_id, predicate_position = reader.readline().split('\t')
+        sentence_tokens = sentences[sentence_id]
+        predicates.append(predicate_position)
+
+        text_b = None  
+  
+        examples.append(
+            InputExample(unique_id=unique_id, text_a=sentence_tokens, text_b=text_b))
+        unique_id += 1
+  return examples, predicates
 
 
 def main(_):
@@ -357,10 +378,20 @@ def main(_):
           num_shards=FLAGS.num_tpu_cores,
           per_host_input_for_training=is_per_host))
 
-  examples = read_examples(FLAGS.input_file)
+  examples, predicate_positions = read_examples(FLAGS.input_file)
 
-  features = convert_examples_to_features(
-      examples=examples, seq_length=FLAGS.max_seq_length, tokenizer=tokenizer)
+  features, mapped_predicates = convert_examples_to_features(
+      examples=examples, seq_length=FLAGS.max_seq_length, tokenizer=tokenizer, predicate_positions=predicate_positions)
+
+  if('train' in FLAGS.input_file):
+    pred_file = 'train_mapped_predicate_positions.txt'
+  elif('dev' in FLAGS.input_file):
+    pred_file = 'dev_mapped_predicate_positions.txt'
+  elif('test' in FLAGS.input_file):
+    pred_file = 'test_mapped_predicate_positions.txt'
+  with open(pred_file, 'w') as pf:
+    for mp in mapped_predicates:
+      pf.write("%s\n" % (str(mp)))
 
   unique_id_to_feature = {}
   for feature in features:
