@@ -344,20 +344,27 @@ def read_examples(input_file):
     sentence_file = 'en-ud-test.conllu'
 
   with open(sentence_file, 'r') as f:
+    data = f.read()
+    sentences = data.split('\n\n')
     predicates = []
     with tf.gfile.GFile(input_file, "r") as reader:
       while True:
-        data = f.read()
-        sentences = data.split('\n\n')
-        sentence_id, predicate_position = reader.readline().split('\t')
-        sentence_tokens = sentences[sentence_id]
-        predicates.append(predicate_position)
+        line = reader.readline().split('\t')
+        if (len(line) == 2):
+          sentence_id = line[0]
+          predicate_position = line[1]
+          sentence_id = int(sentence_id)
+          predicate_position = int(predicate_position)
+          sentence_tokens = sentences[sentence_id]
+          predicates.append(predicate_position)
 
-        text_b = None  
-  
-        examples.append(
-            InputExample(unique_id=unique_id, text_a=sentence_tokens, text_b=text_b))
-        unique_id += 1
+          text_b = None  
+    
+          examples.append(
+              InputExample(unique_id=unique_id, text_a=sentence_tokens, text_b=text_b))
+          unique_id += 1
+        else:
+          break
   return examples, predicates
 
 
