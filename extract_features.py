@@ -243,9 +243,8 @@ def convert_examples_to_features(examples, seq_length, tokenizer, predicate_posi
       # Account for [CLS], [SEP], [SEP] with "- 3"
       _truncate_seq_pair(tokens_a, tokens_b, seq_length - 3)
     else:
-      # Account for [CLS] and [SEP] with "- 2"
-      if len(tokens_a) > seq_length - 2:
-        tokens_a = tokens_a[0:(seq_length - 2)]
+      if len(tokens_a) > seq_length:
+        tokens_a = tokens_a[0:seq_length]
 
     # The convention in BERT is:
     # (a) For sequence pairs:
@@ -355,8 +354,17 @@ def read_examples(input_file):
           predicate_position = line[1]
           sentence_id = int(sentence_id)
           predicate_position = int(predicate_position)
-          sentence_tokens = sentences[sentence_id]
           predicates.append(predicate_position)
+
+          sentence = sentences[sentence_id]
+          sentence_lines = sentence.split('\n')
+          sentence_tokens = []
+          for sentence_line in sentence_lines:
+              sentence_line = sentence_line.strip('\n') 
+
+              if(len(sentence_line.split('\t')) >= 3):   # avoid empty line
+                  word = sentence_line.split('\t')[1].lower()
+                  sentence_tokens.append(word)
 
           text_b = None  
     
