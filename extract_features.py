@@ -336,11 +336,11 @@ def read_examples(input_file):
   unique_id = 0
 
   if('train' in input_file):
-    sentence_file = 'en-ud-train.conllu'
+    sentence_file = '../UDS_IH2_unified/train.conll'
   elif('dev' in input_file):
-    sentence_file = 'en-ud-dev.conllu'
+    sentence_file = '../UDS_IH2_unified/dev.conll'
   elif('test' in input_file):
-    sentence_file = 'en-ud-test.conllu'
+    sentence_file = '../UDS_IH2_unified/test.conll'
 
   with open(sentence_file, 'r') as f:
     data = f.read()
