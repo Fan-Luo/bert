@@ -207,110 +207,103 @@ def model_fn_builder(bert_config, init_checkpoint, layer_indexes, use_tpu,
   return model_fn
 
 
-def convert_examples_to_features(examples, seq_length, tokenizer, predicate_positions):
+def convert_examples_to_features(examples, seq_length, tokenizer):
   """Loads a data file into a list of `InputBatch`s."""
 
   features = []
-  mapped_predicates = []
-  for (ex_index, example) in enumerate(examples):
+  with open('tokenized_sentences.txt', 'w') as pf:
+   
+    for (ex_index, example) in enumerate(examples):
 
-    orig_tokens = example.text_a
-    predicate_position = predicate_positions[ex_index] - 1   
-    ### Output
-    tokens_a = []
+      tokens_a = tokenizer.tokenize(example.text_a)
+      tokens_b = None
+      if example.text_b:
+        tokens_b = tokenizer.tokenize(example.text_b)
 
-    #tokens_a = tokenizer.tokenize(example.text_a)
+      if tokens_b:
+        # Modifies `tokens_a` and `tokens_b` in place so that the total
+        # length is less than the specified length.
+        # Account for [CLS], [SEP], [SEP] with "- 3"
+        _truncate_seq_pair(tokens_a, tokens_b, seq_length - 3)
+      else:
+        if len(tokens_a) > seq_length - 2:
+          tokens_a = tokens_a[0:(seq_length - 2)]
 
-    # Token map will be an int -> int mapping between the `orig_tokens` index and
-    # the `tokens_a` index.
-    orig_to_tok_map = []
-    tokens_a.append("[CLS]")
-    for orig_token in orig_tokens:
-      orig_to_tok_map.append(len(tokens_a))
-      tokens_a.extend(tokenizer.tokenize(orig_token))
-    tokens_a.append("[SEP]")
-
-    mapped_predicate_position = orig_to_tok_map[predicate_position]
-    mapped_predicates.append(mapped_predicate_position)
-
-    tokens_b = None
-    if example.text_b:
-      tokens_b = tokenizer.tokenize(example.text_b)
-
-    if tokens_b:
-      # Modifies `tokens_a` and `tokens_b` in place so that the total
-      # length is less than the specified length.
-      # Account for [CLS], [SEP], [SEP] with "- 3"
-      _truncate_seq_pair(tokens_a, tokens_b, seq_length - 3)
-    else:
-      if len(tokens_a) > seq_length:
-        tokens_a = tokens_a[0:seq_length]
-
-    # The convention in BERT is:
-    # (a) For sequence pairs:
-    #  tokens:   [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]
-    #  type_ids: 0     0  0    0    0     0       0 0     1  1  1  1   1 1
-    # (b) For single sequences:
-    #  tokens:   [CLS] the dog is hairy . [SEP]
-    #  type_ids: 0     0   0   0  0     0 0
-    #
-    # Where "type_ids" are used to indicate whether this is the first
-    # sequence or the second sequence. The embedding vectors for `type=0` and
-    # `type=1` were learned during pre-training and are added to the wordpiece
-    # embedding vector (and position vector). This is not *strictly* necessary
-    # since the [SEP] token unambiguously separates the sequences, but it makes
-    # it easier for the model to learn the concept of sequences.
-    #
-    # For classification tasks, the first vector (corresponding to [CLS]) is
-    # used as as the "sentence vector". Note that this only makes sense because
-    # the entire model is fine-tuned.
-    tokens = []
-    input_type_ids = []
-    for token in tokens_a:
-      tokens.append(token)
+      for i, t in enumerate(tokens_a):
+        if i < (len(tokens_a) - 1):
+          pf.write("%s\t" % (t))
+        elif i == (len(tokens_a) - 1):
+          pf.write("%s\n" % (t))
+ 
+      # The convention in BERT is:
+      # (a) For sequence pairs:
+      #  tokens:   [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]
+      #  type_ids: 0     0  0    0    0     0       0 0     1  1  1  1   1 1
+      # (b) For single sequences:
+      #  tokens:   [CLS] the dog is hairy . [SEP]
+      #  type_ids: 0     0   0   0  0     0 0
+      #
+      # Where "type_ids" are used to indicate whether this is the first
+      # sequence or the second sequence. The embedding vectors for `type=0` and
+      # `type=1` were learned during pre-training and are added to the wordpiece
+      # embedding vector (and position vector). This is not *strictly* necessary
+      # since the [SEP] token unambiguously separates the sequences, but it makes
+      # it easier for the model to learn the concept of sequences.
+      #
+      # For classification tasks, the first vector (corresponding to [CLS]) is
+      # used as as the "sentence vector". Note that this only makes sense because
+      # the entire model is fine-tuned.
+      tokens = []
+      input_type_ids = []
+      tokens.append("[CLS]")
       input_type_ids.append(0)
-
-    if tokens_b:
-      for token in tokens_b:
+      for token in tokens_a:
         tokens.append(token)
-        input_type_ids.append(1)
+        input_type_ids.append(0)
       tokens.append("[SEP]")
-      input_type_ids.append(1)
-
-    input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    input_mask = [1] * len(input_ids)
-
-    # Zero-pad up to the sequence length.
-    while len(input_ids) < seq_length:
-      input_ids.append(0)
-      input_mask.append(0)
       input_type_ids.append(0)
 
-    assert len(input_ids) == seq_length
-    assert len(input_mask) == seq_length
-    assert len(input_type_ids) == seq_length
+      if tokens_b:
+        for token in tokens_b:
+          tokens.append(token)
+          input_type_ids.append(1)
+        tokens.append("[SEP]")
+        input_type_ids.append(1)
 
-    if ex_index < 5:
-      tf.logging.info("*** Example ***")
-      tf.logging.info("unique_id: %s" % (example.unique_id))
-      tf.logging.info("tokens: %s" % " ".join(
-          [tokenization.printable_text(x) for x in tokens]))
-      tf.logging.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-      tf.logging.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-      tf.logging.info(
-          "input_type_ids: %s" % " ".join([str(x) for x in input_type_ids]))
+      input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
-    features.append(
-        InputFeatures(
-            unique_id=example.unique_id,
-            tokens=tokens,
-            input_ids=input_ids,
-            input_mask=input_mask,
-            input_type_ids=input_type_ids))
-  return features, mapped_predicates
+      # The mask has 1 for real tokens and 0 for padding tokens. Only real
+      # tokens are attended to.
+      input_mask = [1] * len(input_ids)
+
+      # Zero-pad up to the sequence length.
+      while len(input_ids) < seq_length:
+        input_ids.append(0)
+        input_mask.append(0)
+        input_type_ids.append(0)
+
+      assert len(input_ids) == seq_length
+      assert len(input_mask) == seq_length
+      assert len(input_type_ids) == seq_length
+
+      if ex_index < 5:
+        tf.logging.info("*** Example ***")
+        tf.logging.info("unique_id: %s" % (example.unique_id))
+        tf.logging.info("tokens: %s" % " ".join(
+            [tokenization.printable_text(x) for x in tokens]))
+        tf.logging.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+        tf.logging.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+        tf.logging.info(
+            "input_type_ids: %s" % " ".join([str(x) for x in input_type_ids]))
+
+      features.append(
+          InputFeatures(
+              unique_id=example.unique_id,
+              tokens=tokens,
+              input_ids=input_ids,
+              input_mask=input_mask,
+              input_type_ids=input_type_ids))
+  return features
 
 
 def _truncate_seq_pair(tokens_a, tokens_b, max_length):
@@ -335,45 +328,20 @@ def read_examples(input_file):
   examples = []
   unique_id = 0
 
-  if('train' in input_file):
-    sentence_file = '../UDS_IH2_unified/train.conll'
-  elif('dev' in input_file):
-    sentence_file = '../UDS_IH2_unified/dev.conll'
-  elif('test' in input_file):
-    sentence_file = '../UDS_IH2_unified/test.conll'
+  with tf.gfile.GFile(input_file, "r") as reader:
+    while True:
+      line = tokenization.convert_to_unicode(reader.readline())
+      if not line:
+        break
+      text_a = line.strip()
 
-  with open(sentence_file, 'r') as f:
-    data = f.read()
-    sentences = data.split('\n\n')
-    predicates = []
-    with tf.gfile.GFile(input_file, "r") as reader:
-      while True:
-        line = reader.readline().split('\t')
-        if (len(line) == 2):
-          sentence_id = line[0]
-          predicate_position = line[1]
-          sentence_id = int(sentence_id)
-          predicate_position = int(predicate_position)
-          predicates.append(predicate_position)
+      text_b = None  
 
-          sentence = sentences[sentence_id]
-          sentence_lines = sentence.split('\n')
-          sentence_tokens = []
-          for sentence_line in sentence_lines:
-              sentence_line = sentence_line.strip('\n') 
+      examples.append(
+        InputExample(unique_id=unique_id, text_a=text_a, text_b=text_b))
+      unique_id += 1
 
-              if(len(sentence_line.split('\t')) >= 3):   # avoid empty line
-                  word = sentence_line.split('\t')[1].lower()
-                  sentence_tokens.append(word)
-
-          text_b = None  
-    
-          examples.append(
-              InputExample(unique_id=unique_id, text_a=sentence_tokens, text_b=text_b))
-          unique_id += 1
-        else:
-          break
-  return examples, predicates
+  return examples
 
 
 def main(_):
@@ -393,20 +361,10 @@ def main(_):
           num_shards=FLAGS.num_tpu_cores,
           per_host_input_for_training=is_per_host))
 
-  examples, predicate_positions = read_examples(FLAGS.input_file)
+  examples = read_examples(FLAGS.input_file)
 
-  features, mapped_predicates = convert_examples_to_features(
-      examples=examples, seq_length=FLAGS.max_seq_length, tokenizer=tokenizer, predicate_positions=predicate_positions)
-
-  if('train' in FLAGS.input_file):
-    pred_file = 'train_mapped_predicate_positions.txt'
-  elif('dev' in FLAGS.input_file):
-    pred_file = 'dev_mapped_predicate_positions.txt'
-  elif('test' in FLAGS.input_file):
-    pred_file = 'test_mapped_predicate_positions.txt'
-  with open(pred_file, 'w') as pf:
-    for mp in mapped_predicates:
-      pf.write("%s\n" % (str(mp)))
+  features = convert_examples_to_features(
+      examples=examples, seq_length=FLAGS.max_seq_length, tokenizer=tokenizer)
 
   unique_id_to_feature = {}
   for feature in features:
